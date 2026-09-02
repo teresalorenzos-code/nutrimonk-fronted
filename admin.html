@@ -125,6 +125,9 @@ td { padding: 10px; border-bottom: 1px solid #f0e9da; vertical-align: middle; }
 
 .filter-row { display: flex; gap: 8px; margin-bottom: 16px; flex-wrap: wrap; }
 .filter-row .btn-outline.active { background: var(--verde-selva); color: #fff; }
+.catalog-toolbar { margin-bottom: 16px; }
+.search-input { width: 100%; max-width: 360px; padding: 10px 14px; border-radius: var(--radius-sm); border: 1px solid #ddd0b8; background: #fff; font-family: var(--font-body); font-size: 0.9rem; }
+.search-input:focus { outline: 2px solid var(--verde-selva); }
 
 .stock-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
 .stock-ok { background: var(--verde-selva); }
@@ -238,7 +241,12 @@ td { padding: 10px; border-bottom: 1px solid #f0e9da; vertical-align: middle; }
     <form id="product-form">
       <div class="field"><label>Nombre</label><input type="text" id="pf-nombre" required /></div>
       <div class="field"><label>Categoría</label><input type="text" id="pf-categoria" required /></div>
-      <div class="field"><label>URL de imagen (opcional)</label><input type="text" id="pf-imagen" /></div>
+      <div class="field">
+        <label>Foto del producto</label>
+        <input type="file" id="pf-imagen-file" accept="image/*" />
+        <img id="pf-imagen-preview" alt="Vista previa" style="display:none; max-width:160px; margin-top:10px; border-radius:12px; box-shadow: var(--sombra);" />
+        <p id="pf-imagen-hint" style="font-size:0.75rem; color:#8a7660; margin-top:4px;"></p>
+      </div>
 
       <div class="field">
         <label>Presentaciones</label>
@@ -282,7 +290,7 @@ td { padding: 10px; border-bottom: 1px solid #f0e9da; vertical-align: middle; }
 </div>
 
 <script>
-const API_BASE_URL = "https://nutrimonk-web.onrender.com";
+const API_BASE_URL = "http://localhost:3000";
 
 const token = sessionStorage.getItem("nutrimonk_admin_token");
 const adminEmail = sessionStorage.getItem("nutrimonk_admin_email");
@@ -406,38 +414,68 @@ async function loadCatalogo() {
 
   try {
     const productos = await apiFetch("/api/productos");
-    catalogoCache = productos;
+    // Orden alfabético por nombre, para que sea fácil ubicar un producto
+    // sin tener que scrollear categoría por categoría.
+    catalogoCache = productos.sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
 
     el.innerHTML = `
+      <div class="catalog-toolbar">
+        <input type="text" id="catalogo-buscador" class="search-input" placeholder="🔍 Buscar producto o categoría..." />
+      </div>
       <div class="card">
         <table>
           <tr><th>Producto</th><th>Categoría</th><th>Presentaciones</th><th>Precios</th><th>Stock total</th><th></th></tr>
-          ${productos.map((p) => {
-            const precios = p.variantes.map((v) => v.precio_oferta ?? v.precio);
-            const min = Math.min(...precios);
-            const max = Math.max(...precios);
-            const stockTotal = p.variantes.reduce((sum, v) => sum + v.stock_cantidad, 0);
-            const algunaConStock = p.variantes.some((v) => v.stock_disponible);
-            return `
-              <tr>
-                <td>${p.nombre}</td>
-                <td>${p.categoria}</td>
-                <td>${p.variantes.length} presentación${p.variantes.length === 1 ? "" : "es"}</td>
-                <td>${min === max ? money(min) : `${money(min)} – ${money(max)}`}</td>
-                <td><span class="stock-dot ${algunaConStock ? "stock-ok" : "stock-out"}"></span>${stockTotal} u.</td>
-                <td style="white-space:nowrap;">
-                  <button class="btn btn-outline btn-sm" onclick="openProductModal(${p.id})">Editar</button>
-                  <button class="btn btn-outline danger btn-sm" onclick="deleteProduct(${p.id})">Borrar</button>
-                </td>
-              </tr>
-            `;
-          }).join("")}
+          <tbody id="catalogo-tbody"></tbody>
         </table>
       </div>
     `;
+
+    renderCatalogoFilas(catalogoCache);
+
+    document.querySelector("#catalogo-buscador").addEventListener("input", (e) => {
+      const texto = e.target.value.trim().toLowerCase();
+      const filtrados = catalogoCache.filter(
+        (p) => p.nombre.toLowerCase().includes(texto) || p.categoria.toLowerCase().includes(texto)
+      );
+      renderCatalogoFilas(filtrados);
+    });
   } catch (err) {
     el.innerHTML = `<p class="empty-msg">No se pudo cargar el catálogo: ${err.message}</p>`;
   }
+}
+
+// Dibuja solo las FILAS de la tabla — separado de loadCatalogo() para
+// poder redibujar nada más que esto cada vez que se escribe en el buscador,
+// sin tener que volver a pedirle el catálogo entero al servidor.
+function renderCatalogoFilas(productos) {
+  const tbody = document.querySelector("#catalogo-tbody");
+  if (!tbody) return;
+
+  if (productos.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty-msg">No se encontró ningún producto con ese nombre.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = productos.map((p) => {
+    const precios = p.variantes.map((v) => v.precio_oferta ?? v.precio);
+    const min = Math.min(...precios);
+    const max = Math.max(...precios);
+    const stockTotal = p.variantes.reduce((sum, v) => sum + v.stock_cantidad, 0);
+    const algunaConStock = p.variantes.some((v) => v.stock_disponible);
+    return `
+      <tr>
+        <td>${p.nombre}</td>
+        <td>${p.categoria}</td>
+        <td>${p.variantes.length} presentación${p.variantes.length === 1 ? "" : "es"}</td>
+        <td>${min === max ? money(min) : `${money(min)} – ${money(max)}`}</td>
+        <td><span class="stock-dot ${algunaConStock ? "stock-ok" : "stock-out"}"></span>${stockTotal} u.</td>
+        <td style="white-space:nowrap;">
+          <button class="btn btn-outline btn-sm" onclick="openProductModal(${p.id})">Editar</button>
+          <button class="btn btn-outline danger btn-sm" onclick="deleteProduct(${p.id})">Borrar</button>
+        </td>
+      </tr>
+    `;
+  }).join("");
 }
 
 const productModalEl = document.querySelector("#product-modal");
@@ -473,21 +511,79 @@ function addVarianteRow(variante = null) {
   list.insertAdjacentHTML("beforeend", rowHTML);
 }
 
+// Variable donde guardamos la imagen ya lista para mandar al servidor
+// (como texto Base64) — arranca vacía y se completa cuando se elige un
+// archivo, o con la imagen que el producto ya tenía al editar.
+let imagenSeleccionada = null;
+
+// Convierte el archivo elegido en una imagen chica en Base64. No subimos
+// el archivo "tal cual" (podría pesar varios MB) — lo redibujamos en un
+// canvas más chico y lo comprimimos, así entra cómodo en la base de datos
+// y carga rápido en el catálogo.
+function procesarImagenSeleccionada(file) {
+  return new Promise((resolve, reject) => {
+    const lector = new FileReader();
+    lector.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxAncho = 600;
+        const escala = Math.min(1, maxAncho / img.width);
+        const canvas = document.createElement("canvas");
+        canvas.width = img.width * escala;
+        canvas.height = img.height * escala;
+        canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
+        resolve(canvas.toDataURL("image/jpeg", 0.8));
+      };
+      img.onerror = reject;
+      img.src = e.target.result;
+    };
+    lector.onerror = reject;
+    lector.readAsDataURL(file);
+  });
+}
+
+document.querySelector("#pf-imagen-file").addEventListener("change", async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+
+  const hintEl = document.querySelector("#pf-imagen-hint");
+  hintEl.textContent = "Procesando imagen...";
+
+  imagenSeleccionada = await procesarImagenSeleccionada(file);
+
+  const previewEl = document.querySelector("#pf-imagen-preview");
+  previewEl.src = imagenSeleccionada;
+  previewEl.style.display = "block";
+  hintEl.textContent = "Esta imagen reemplaza a la anterior al guardar.";
+});
+
 function openProductModal(id = null) {
   editingProductId = id;
   document.querySelector("#product-modal-error").classList.remove("show");
   document.querySelector("#pf-variantes-list").innerHTML = "";
+  document.querySelector("#pf-imagen-file").value = "";
+  document.querySelector("#pf-imagen-hint").textContent = "";
+
+  const previewEl = document.querySelector("#pf-imagen-preview");
 
   if (id) {
     const p = catalogoCache.find((prod) => prod.id === id);
     document.querySelector("#product-modal-title").textContent = "Editar producto";
     document.querySelector("#pf-nombre").value = p.nombre;
     document.querySelector("#pf-categoria").value = p.categoria;
-    document.querySelector("#pf-imagen").value = p.imagen_url || "";
+    imagenSeleccionada = p.imagen_url || null;
+    if (imagenSeleccionada) {
+      previewEl.src = imagenSeleccionada;
+      previewEl.style.display = "block";
+    } else {
+      previewEl.style.display = "none";
+    }
     p.variantes.forEach((v) => addVarianteRow(v));
   } else {
     document.querySelector("#product-modal-title").textContent = "Nuevo producto";
     productFormEl.reset();
+    imagenSeleccionada = null;
+    previewEl.style.display = "none";
     addVarianteRow(); // arranca con una fila vacía para completar
   }
 
@@ -523,7 +619,7 @@ productFormEl.addEventListener("submit", async (e) => {
   const datosGenerales = {
     nombre: document.querySelector("#pf-nombre").value,
     categoria: document.querySelector("#pf-categoria").value,
-    imagen_url: document.querySelector("#pf-imagen").value || null,
+    imagen_url: imagenSeleccionada,
   };
 
   try {

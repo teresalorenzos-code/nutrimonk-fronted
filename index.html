@@ -330,7 +330,7 @@ a:focus-visible, button:focus-visible { outline: 3px solid var(--amarillo-maiz);
 // Mientras probamos en tu computadora, la API vive en localhost. El día
 // que subamos el backend a Render/Railway, esta es la ÚNICA línea que
 // hay que cambiar por la URL real (ej. "https://nutrimonk-api.onrender.com").
-const API_BASE_URL = "https://nutrimonk-web.onrender.com";
+const API_BASE_URL = "http://localhost:3000";
 
 // El backend no guarda un emoji por producto, así que elegimos uno según
 // la categoría, nada más que para el "dibujito" de la tarjeta.
@@ -574,25 +574,8 @@ function addToCart(product, variant) {
     cart.push({ key: variant.id, product, variant, qty: 1 });
   }
 
-  renderCart();
+  renderDrawer();
   pulseCartIcon(); // pequeño feedback visual, sin abrir el panel
-}
-
-// Suma o resta 1 a una línea del carrito. Si llega a 0, la línea se elimina.
-function changeQty(key, delta) {
-  const line = cart.find((l) => l.key === key);
-  if (!line) return;
-
-  line.qty += delta;
-  if (line.qty <= 0) {
-    cart = cart.filter((l) => l.key !== key);
-  }
-  renderCart();
-}
-
-function removeFromCart(key) {
-  cart = cart.filter((l) => l.key !== key);
-  renderCart();
 }
 
 // Calcula el subtotal sumando precio x cantidad de cada línea.
